@@ -2,7 +2,7 @@
   "name": "Kôlňa – susedská výpožičná skladovka",
   "short_name": "Kôlňa",
   "description": "Nahraj. Požičaj. Pomôž. Susedská výpožičná sieť.",
-  "start_url": "/",
+  "start_url": "/app",
   "display": "standalone",
   "background_color": "#FFFFFF",
   "theme_color": "#D97757",
