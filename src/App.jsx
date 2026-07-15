@@ -50,12 +50,26 @@ function simpleHash(str) {
   return hash.toString(16);
 }
 
+const CATEGORY_STYLE = {
+  "Náradie": { bg: "#FBEAD2", icon: "#BF5F42" },
+  "Záhrada": { bg: "#DFF3E3", icon: "#3F8B5C" },
+  "Šport": { bg: "#EAE1FB", icon: "#7C5CE0" },
+  "Domácnosť": { bg: "#DCEEFB", icon: "#3B7EBF" },
+  "Elektronika": { bg: "#F7E0EC", icon: "#C4487A" },
+  "Iné": { bg: "#EFEAE1", icon: "#8A7C6D" },
+};
+
+function categoryStyle(cat) {
+  return CATEGORY_STYLE[cat] || CATEGORY_STYLE["Iné"];
+}
+
 function categoryIcon(cat) {
   const found = CATEGORY_META.find((c) => c.key === cat);
   return found ? found.icon : Package;
 }
 
 export default function KolnaApp() {
+  const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState("browse");
   const [users, setUsers] = useState([]);
   const [items, setItems] = useState([]);
@@ -91,6 +105,11 @@ export default function KolnaApp() {
 
   useEffect(() => {
     loadAll();
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowSplash(false), 1600);
+    return () => clearTimeout(t);
   }, []);
 
   async function loadAll() {
@@ -275,7 +294,8 @@ export default function KolnaApp() {
     if (!currentUser || !chatWith || !chatInput.trim()) return;
     setChatSending(true);
     const newMessage = {
-      item_id: chatWith.itemId,
+      item_id: chatWith.itemId || null,
+      request_id: chatWith.requestId || null,
       item_name: chatWith.itemName,
       from_username: currentUser.username,
       to_username: chatWith.otherUsername,
@@ -287,6 +307,15 @@ export default function KolnaApp() {
       setMessages((prev) => [...prev, data]);
       setChatInput("");
     }
+  }
+
+  function openChatWithRequester(request) {
+    if (!currentUser) {
+      setView("login");
+      return;
+    }
+    if (currentUser.username === request.requester_username) return;
+    setChatWith({ itemId: null, requestId: request.id, itemName: `Dopyt: ${request.title}`, otherUsername: request.requester_username });
   }
 
   const filteredItems = useMemo(() => {
@@ -314,10 +343,11 @@ export default function KolnaApp() {
       .filter((m) => m.from_username === currentUser.username || m.to_username === currentUser.username)
       .forEach((m) => {
         const otherUser = m.from_username === currentUser.username ? m.to_username : m.from_username;
-        const key = `${m.item_id}__${otherUser}`;
+        const key = `${m.item_id || "x"}_${m.request_id || "x"}__${otherUser}`;
         const existing = map.get(key);
         if (!existing || new Date(m.created_at) > new Date(existing.created_at)) {
-          map.set(key, { itemId: m.item_id, itemName: m.item_name, otherUsername: otherUser, content: m.content, created_at: m.created_at });}
+          map.set(key, { itemId: m.item_id || null, requestId: m.request_id || null, itemName: m.item_name, otherUsername: otherUser, content: m.content, created_at: m.created_at });
+        }
       });
     return Array.from(map.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [messages, currentUser]);
@@ -326,7 +356,8 @@ export default function KolnaApp() {
     if (!chatWith || !currentUser) return [];
     return messages.filter(
       (m) =>
-        m.item_id === chatWith.itemId &&
+        (m.item_id || null) === (chatWith.itemId || null) &&
+        (m.request_id || null) === (chatWith.requestId || null) &&
         ((m.from_username === currentUser.username && m.to_username === chatWith.otherUsername) ||
           (m.to_username === currentUser.username && m.from_username === chatWith.otherUsername))
     );
@@ -334,6 +365,7 @@ export default function KolnaApp() {
 
   return (
     <div style={styles.app}>
+      {showSplash && <SplashScreen />}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; }
@@ -345,6 +377,13 @@ export default function KolnaApp() {
         }
         @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes splashLogoPop { 0% { opacity: 0; transform: scale(0.6); } 60% { opacity: 1; transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+        @keyframes splashTextIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes splashFadeOut { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+        .kolna-splash-overlay { animation: splashFadeOut 1.6s ease forwards; }
+        .kolna-splash-logo { animation: splashLogoPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+        .kolna-splash-name { animation: splashTextIn 0.5s ease 0.35s both; }
+        .kolna-splash-tag { animation: splashTextIn 0.5s ease 0.5s both; }
         .kolna-card { animation: fadeSlideUp 0.45s ease both; transition: transform 0.2s ease, box-shadow 0.2s ease; }
         .kolna-card:hover { transform: translateY(-4px); box-shadow: 0 10px 24px rgba(191, 95, 66, 0.14); }
         .kolna-logo-icon { transition: transform 0.3s ease; }
@@ -392,6 +431,7 @@ export default function KolnaApp() {
                 currentUser={currentUser}
                 onDeleteRequest={handleDeleteRequest}
                 onAddRequestClick={() => (currentUser ? setView("addRequest") : setView("login"))}
+                onMessageRequester={openChatWithRequester}
               />
             )}
 
@@ -457,6 +497,18 @@ export default function KolnaApp() {
   );
 }
 
+function SplashScreen() {
+  return (
+    <div className="kolna-splash-overlay" style={styles.splashOverlay}>
+      <div className="kolna-splash-logo" style={styles.splashLogo}>
+        <HeartHandshake size={44} color="#FFFFFF" />
+      </div>
+      <div className="kolna-splash-name" style={styles.splashName}>Kôlňa</div>
+      <div className="kolna-splash-tag" style={styles.splashTag}>Nahraj. Požičaj. Pomôž.</div>
+    </div>
+  );
+}
+
 function Header({ currentUser, view, setView, onLogout, conversationCount }) {
   return (
     <div style={styles.header}>
@@ -496,7 +548,7 @@ function Header({ currentUser, view, setView, onLogout, conversationCount }) {
       </div>
     </div>
   );
-}
+  }
 
 function NavBtn({ children, onClick, active }) {
   return (
@@ -603,7 +655,7 @@ function ContactsEditor({ contacts, onChange }) {
   );
 }
 
-function BrowseView({ items, requests, filterLocation, setFilterLocation, filterCategory, setFilterCategory, searchTerm, setSearchTerm, onSelect, currentUser, onDeleteRequest, onAddRequestClick }) {
+function BrowseView({ items, requests, filterLocation, setFilterLocation, filterCategory, setFilterCategory, searchTerm, setSearchTerm, onSelect, currentUser, onDeleteRequest, onAddRequestClick, onMessageRequester }) {
   return (
     <div>
       <div className="kolna-fade" style={styles.hero}>
@@ -639,14 +691,15 @@ function BrowseView({ items, requests, filterLocation, setFilterLocation, filter
         </div>
       )}
 
-      <RequestBoard requests={requests} currentUser={currentUser} onDelete={onDeleteRequest} onAddClick={onAddRequestClick} />
+      <RequestBoard requests={requests} currentUser={currentUser} onDelete={onDeleteRequest} onAddClick={onAddRequestClick} onMessageRequester={onMessageRequester} />
     </div>
   );
 }
 
-function RequestBoard({ requests, currentUser, onDelete, onAddClick }) {
+function RequestBoard({ requests, currentUser, onDelete, onAddClick, onMessageRequester }) {
   return (
-    <div style={styles.requestBoard}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+    <div style={styles.requestBoard}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ fontFamily: "'Fraunces', serif", fontSize: 22, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
             <HelpCircle size={20} color="#BF5F42" /> Hľadám
@@ -665,8 +718,13 @@ function RequestBoard({ requests, currentUser, onDelete, onAddClick }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {requests.map((r) => {
             const Icon = categoryIcon(r.category);
+            const isMine = currentUser && currentUser.username === r.requester_username;
             return (
-              <div key={r.id} style={styles.requestRow}>
+              <div
+                key={r.id}
+                style={{ ...styles.requestRow, cursor: isMine ? "default" : "pointer" }}
+                onClick={() => !isMine && onMessageRequester(r)}
+              >
                 <div style={styles.requestIconBox}>
                   <Icon size={18} color="#BF5F42" />
                 </div>
@@ -677,10 +735,20 @@ function RequestBoard({ requests, currentUser, onDelete, onAddClick }) {
                     <MapPin size={12} /> {r.location} · hľadá {r.requester_username}
                   </div>
                 </div>
-                {currentUser && currentUser.username === r.requester_username && (
-                  <button style={styles.deleteBtn} onClick={() => onDelete(r.id)}>
+                {isMine ? (
+                  <button
+                    style={styles.deleteBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(r.id);
+                    }}
+                  >
                     <Trash2 size={13} />
                   </button>
+                ) : (
+                  <div style={styles.requestMsgBtn}>
+                    <MessageCircle size={16} color="#BF5F42" />
+                  </div>
                 )}
               </div>
             );
@@ -693,24 +761,33 @@ function RequestBoard({ requests, currentUser, onDelete, onAddClick }) {
 
 function ItemCard({ item, onClick, index }) {
   const Icon = categoryIcon(item.category);
+  const cs = categoryStyle(item.category);
+  const isFree = !item.price_unit || item.price_unit === "zadarmo";
   return (
     <div className="kolna-card" style={{ ...styles.card, animationDelay: `${Math.min(index, 8) * 0.05}s` }} onClick={onClick}>
-      {item.image_url ? (
-        <img src={item.image_url} alt={item.name} style={styles.cardImage} />
-      ) : (
-        <div style={styles.cardImagePlaceholder}>
-          <Icon size={28} color="#D9A98C" />
+      <div style={{ position: "relative" }}>
+        {item.image_url ? (
+          <img src={item.image_url} alt={item.name} style={styles.cardImage} />
+        ) : (
+          <div style={{ ...styles.cardImagePlaceholder, background: cs.bg }}>
+            <Icon size={40} color={cs.icon} />
+          </div>
+        )}
+        <div style={{ ...styles.priceChip, background: isFree ? "#EDE7DC" : "#D97757", color: isFree ? "#6B5C46" : "#FFFFFF" }}>
+          {priceLabel(item)}
         </div>
-      )}
+      </div>
       <div style={{ padding: "14px 16px 16px" }}>
-        <div style={styles.cardCategory}>
-          <Icon size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> {item.category}
-        </div>
+        <div style={{ ...styles.cardCategory, color: cs.icon }}>{item.category}</div>
         <div style={styles.cardName}>{item.name}</div>
         <div style={styles.cardDesc}>{item.description ? item.description.slice(0, 90) : "Bez popisu."}</div>
-        <div style={{ ...styles.priceBadge, marginBottom: 8 }}>{priceLabel(item)}</div>
-        <div style={styles.cardMeta}>
-          <MapPin size={13} style={{ marginRight: 4 }} /> {item.location}
+        <div style={styles.cardMetaRow}>
+          <div style={styles.cardMeta}>
+            <MapPin size={13} style={{ marginRight: 4 }} /> {item.location}
+          </div>
+          <div style={styles.cardMeta}>
+            <User size={13} style={{ marginRight: 4 }} /> {item.owner_username}
+          </div>
         </div>
       </div>
     </div>
@@ -723,6 +800,7 @@ function ItemDetailPriceRow({ item }) {
 
 function ItemDetail({ item, onBack, currentUser, revealed, onReveal, onLoginNeeded, onMessageOwner }) {
   const Icon = categoryIcon(item.category);
+  const cs = categoryStyle(item.category);
   const contacts = item.contacts || [];
   const isOwnItem = currentUser && currentUser.username === item.owner_username;
   return (
@@ -733,13 +811,11 @@ function ItemDetail({ item, onBack, currentUser, revealed, onReveal, onLoginNeed
       {item.image_url ? (
         <img src={item.image_url} alt={item.name} style={styles.detailImage} />
       ) : (
-        <div style={{ ...styles.cardImagePlaceholder, height: 220, borderRadius: 10, marginBottom: 16 }}>
-          <Icon size={40} color="#D9A98C" />
+        <div style={{ ...styles.cardImagePlaceholder, background: cs.bg, height: 220, borderRadius: 10, marginBottom: 16 }}>
+          <Icon size={56} color={cs.icon} />
         </div>
       )}
-      <div style={styles.cardCategory}>
-        <Icon size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> {item.category}
-      </div>
+      <div style={{ ...styles.cardCategory, color: cs.icon }}>{item.category}</div>
       <div style={{ fontFamily: "'Fraunces', serif", fontSize: 28, margin: "8px 0", fontWeight: 600 }}>{item.name}</div>
       <div style={{ color: "#8A7C6D", marginBottom: 10, display: "flex", alignItems: "center" }}>
         <MapPin size={14} style={{ marginRight: 4 }} /> {item.location}
@@ -975,7 +1051,8 @@ function MessagesView({ conversations, onOpen }) {
             </div>
           ))}
         </div>
-      )}</div>
+      )}
+    </div>
   );
 }
 
@@ -1021,7 +1098,7 @@ function ChatThread({ chatWith, messages, currentUser, chatInput, setChatInput, 
         </button>
       </div>
     </div>
-  );
+    );
 }
 
 function MyItemsView({ items, onDelete, onAdd }) {
@@ -1041,19 +1118,24 @@ function MyItemsView({ items, onDelete, onAdd }) {
         <div className="kolna-grid" style={styles.grid}>
           {items.map((it, idx) => {
             const Icon = categoryIcon(it.category);
+            const cs = categoryStyle(it.category);
+            const isFree = !it.price_unit || it.price_unit === "zadarmo";
             return (
               <div key={it.id} className="kolna-card" style={{ ...styles.card, animationDelay: `${Math.min(idx, 8) * 0.05}s` }}>
-                {it.image_url ? (
-                  <img src={it.image_url} alt={it.name} style={styles.cardImage} />
-                ) : (
-                  <div style={styles.cardImagePlaceholder}>
-                    <Icon size={28} color="#D9A98C" />
+                <div style={{ position: "relative" }}>
+                  {it.image_url ? (
+                    <img src={it.image_url} alt={it.name} style={styles.cardImage} />
+                  ) : (
+                    <div style={{ ...styles.cardImagePlaceholder, background: cs.bg }}>
+                      <Icon size={40} color={cs.icon} />
+                    </div>
+                  )}
+                  <div style={{ ...styles.priceChip, background: isFree ? "#EDE7DC" : "#D97757", color: isFree ? "#6B5C46" : "#FFFFFF" }}>
+                    {priceLabel(it)}
                   </div>
-                )}
+                </div>
                 <div style={{ padding: "14px 16px 16px" }}>
-                  <div style={styles.cardCategory}>
-                    <Icon size={12} style={{ marginRight: 4, verticalAlign: -2 }} /> {it.category}
-                  </div>
+                  <div style={{ ...styles.cardCategory, color: cs.icon }}>{it.category}</div>
                   <div style={styles.cardName}>{it.name}</div>
                   <div style={styles.cardDesc}>{it.description ? it.description.slice(0, 90) : "Bez popisu."}</div>
                   <div style={styles.cardMeta}>
@@ -1142,12 +1224,23 @@ const styles = {
     overflow: "hidden",
     cursor: "pointer",
   },
-  cardImage: { width: "100%", height: 140, objectFit: "cover", display: "block" },
-  cardImagePlaceholder: { width: "100%", height: 140, background: "#FBEDE5", display: "flex", alignItems: "center", justifyContent: "center" },
-  cardCategory: { fontSize: 11, color: "#BF5F42", marginBottom: 6, fontWeight: 600, display: "flex", alignItems: "center" },
+  cardImage: { width: "100%", height: 150, objectFit: "cover", display: "block" },
+  cardImagePlaceholder: { width: "100%", height: 150, display: "flex", alignItems: "center", justifyContent: "center" },
+  priceChip: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    fontSize: 12,
+    fontWeight: 700,
+    padding: "5px 10px",
+    borderRadius: 999,
+    letterSpacing: 0.2,
+  },
+  cardCategory: { fontSize: 11, marginBottom: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 },
   cardName: { fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 600, marginBottom: 6 },
-  cardDesc: { fontSize: 13, color: "#8A7C6D", marginBottom: 10, lineHeight: 1.4 },
-  cardMeta: { fontSize: 12, color: "#A08E7B", display: "flex", alignItems: "center" },
+  cardDesc: { fontSize: 13, color: "#8A7C6D", marginBottom: 12, lineHeight: 1.4 },
+  cardMetaRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  cardMeta: { fontSize: 12, color: "#A08E7B", display: "flex", alignItems: "center", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   emptyState: { textAlign: "center", padding: "60px 20px", margin: "0 16px", border: "1px dashed #E8DDD0", borderRadius: 12, background: "#FBF7F1" },
   detailCard: { background: "#FFFFFF", border: "1px solid #F0E6D9", borderRadius: 12, padding: 24, maxWidth: 560, margin: "0 16px" },
   detailImage: { width: "100%", height: 240, objectFit: "cover", borderRadius: 10, marginBottom: 16, display: "block" },
@@ -1244,7 +1337,32 @@ const styles = {
     cursor: "pointer",
   },
   requestIconBox: { background: "#FBEDE5", borderRadius: 8, padding: 8, display: "flex", flexShrink: 0 },
+  requestMsgBtn: { background: "#FBEDE5", borderRadius: 8, padding: 8, display: "flex", flexShrink: 0, alignSelf: "center" },
   chatBox: { background: "#FBF7F1", border: "1px solid #F0E6D9", borderRadius: 10, padding: 14, minHeight: 180, maxHeight: 360, overflowY: "auto" },
   chatBubbleMine: { background: "#D97757", color: "#FFFFFF", padding: "8px 12px", borderRadius: "12px 12px 2px 12px", fontSize: 14, maxWidth: "75%" },
   chatBubbleTheirs: { background: "#FFFFFF", border: "1px solid #F0E6D9", color: "#3A2E24", padding: "8px 12px", borderRadius: "12px 12px 12px 2px", fontSize: 14, maxWidth: "75%" },
+  splashOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "#FFFFFF",
+    zIndex: 1000,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    pointerEvents: "none",
+  },
+  splashLogo: {
+    background: "#D97757",
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+    boxShadow: "0 16px 32px rgba(217,119,87,0.3)",
+  },
+  splashName: { fontFamily: "'Fraunces', serif", fontSize: 34, fontWeight: 700, color: "#3A2E24" },
+  splashTag: { fontSize: 14, color: "#BF5F42", fontWeight: 500, marginTop: 6 },
 };
